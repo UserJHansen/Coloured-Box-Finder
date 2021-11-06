@@ -12,7 +12,6 @@
     />
 
     <script src="build/browser.js"></script>
-    <link rel="stylesheet" href="style.css" />
 
     <script src="//mozilla.github.io/pdf.js/build/pdf.js"></script>
     <script src="jszip.min.js"></script>
@@ -25,7 +24,7 @@
     <br />
     <br />
 
-    Place File Here<input type="file" id="input" />
+    Place File Here →<input type="file" id="input" />
 
     <span
       >Page: <span id="page_num"></span> / <span id="page_count"></span
@@ -83,8 +82,6 @@
               { r: 247 / 255, g: 237 / 255, b: 237 / 255, a: 255 / 255 },
               { r: 187 / 255, g: 90 / 255, b: 106 / 255, a: 255 / 255 },
             ],
-
-            compositionMaskColor: FindBox.Color.RED, // Color of unmatched pixels
           });
           /**
            * Get page info from document, resize canvas accordingly, and render page.
@@ -123,34 +120,10 @@
                       "%"
                     );
                     console.log("boxes:", result.boxes);
-                    var boxes = document.getElementsByClassName("box");
-                    for (let i = 0; i < boxes.length; i++)
-                      boxes[i].parentNode.removeChild(boxes[i]);
-
-                    boxes = document.getElementsByClassName("box");
 
                     result.boxes.forEach((value, i) => {
-                      var box = document.createElement("div");
-                      box.className = "box";
-
-                      box.style =
-                        "top: " +
-                        (value.start.y / canvas.height) * 100 +
-                        "%; " +
-                        "left: " +
-                        (value.start.x / canvas.width) * 100 +
-                        "%; " +
-                        "width: " +
-                        ((value.finish.x - value.start.x) / value.width) * 100 +
-                        "%; " +
-                        "height: " +
-                        ((value.finish.y - value.start.y) / value.height) *
-                          100 +
-                        "%";
-                      document.getElementById("hold").appendChild(box);
-
                       var hidden_canv = document.createElement("canvas");
-                      //   hidden_canv.style.display = "none";
+                      hidden_canv.style.display = "none";
                       document.body.appendChild(hidden_canv);
                       hidden_canv.width = value.finish.x - value.start.x;
                       hidden_canv.height = value.finish.y - value.start.y;
@@ -178,7 +151,17 @@
                       );
                       hidden_canv.parentNode.removeChild(hidden_canv);
                     });
-                    onNextPage();
+                    if (pageNum >= pdfDoc.numPages) {
+                      zip
+                        .generateAsync({ type: "blob" })
+                        .then(function (content) {
+                          // see FileSaver.js
+                          saveAs(content, url + ".zip");
+                        });
+                      return;
+                    }
+                    pageNum++;
+                    queueRenderPage(pageNum);
                   })
                   .catch((e) => {
                     console.error(e);
@@ -206,32 +189,6 @@
             } else {
               renderPage(num);
             }
-          }
-
-          /**
-           * Displays previous page.
-           */
-          function onPrevPage() {
-            if (pageNum <= 1) {
-              return;
-            }
-            pageNum--;
-            queueRenderPage(pageNum);
-          }
-
-          /**
-           * Displays next page.
-           */
-          function onNextPage() {
-            if (pageNum >= pdfDoc.numPages) {
-              zip.generateAsync({ type: "blob" }).then(function (content) {
-                // see FileSaver.js
-                saveAs(content, url + ".zip");
-              });
-              return;
-            }
-            pageNum++;
-            queueRenderPage(pageNum);
           }
 
           /**
