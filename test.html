@@ -12,6 +12,7 @@
     />
 
     <script src="build/browser.js"></script>
+    <script src="capture.js"></script>
 
     <script src="//mozilla.github.io/pdf.js/build/pdf.js"></script>
     <script src="jszip.min.js"></script>
@@ -24,186 +25,48 @@
     <br />
     <br />
 
-    Place File Here →<input type="file" id="input" />
+    Place File Here →<input type="file" id="input" multiple />
 
-    <span
-      >Page: <span id="page_num"></span> / <span id="page_count"></span
-    ></span>
-
-    <div id="hold" style="position: relative">
-      <canvas id="the-canvas" style="width: 100%; display: block"></canvas>
-    </div>
+    <div id="hold" style="position: relative"></div>
 
     <script>
       const inputElement = document.getElementById("input");
 
+      var pdfjsLib = window["pdfjs-dist/build/pdf"];
+
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "//mozilla.github.io/pdf.js/build/pdf.worker.js";
+
+      window.numberfinished = 0;
+
       // https://stackoverflow.com/questions/22048395/how-to-open-a-local-pdf-in-pdfjs-using-file-input/28567893
       inputElement.onchange = function (event) {
-        var file = event.target.files[0];
+        var zip = new JSZip();
 
-        //Step 2: Read the file using file reader
-        var fileReader = new FileReader();
+        for (let i = 0; i < event.target.files.length; i++) {
+          prepareFile(
+            event.target.files[i],
+            zip,
+            document.getElementById("hold")
+          );
+        }
 
-        fileReader.onload = function () {
-          //Step 4:turn array buffer into typed array
-          var typedarray = new Uint8Array(this.result);
+        function sleep(ms) {
+          return new Promise((resolve) => setTimeout(resolve, ms));
+        }
 
-          var zip = new JSZip();
-
-          // If absolute URL from the remote server is provided, configure the CORS
-          // header on that server.
-          var url = file.name;
-
-          // Loaded via <script> tag, create shortcut to access PDF.js exports.
-          var pdfjsLib = window["pdfjs-dist/build/pdf"];
-
-          // The workerSrc property shall be specified.
-          pdfjsLib.GlobalWorkerOptions.workerSrc =
-            "//mozilla.github.io/pdf.js/build/pdf.worker.js";
-
-          var pdfDoc = null,
-            pageNum = 1,
-            pageRendering = false,
-            pageNumPending = null,
-            scale = 3,
-            canvas = document.getElementById("the-canvas"),
-            ctx = canvas.getContext("2d");
-
-          const rembrandt = new FindBox({
-            // `imageA` and `imageB` can be either Strings (file path on node.js,
-            // public url on Browsers) or Buffers
-            imageA: new FindBox.Image(ctx),
-
-            // Maximum color delta (0...1):
-            maxDelta: 0.00000001,
-
-            targetColors: [
-              { r: 255 / 255, g: 238 / 255, b: 228 / 255, a: 255 / 255 },
-              { r: 247 / 255, g: 237 / 255, b: 237 / 255, a: 255 / 255 },
-              { r: 187 / 255, g: 90 / 255, b: 106 / 255, a: 255 / 255 },
-            ],
-          });
-          /**
-           * Get page info from document, resize canvas accordingly, and render page.
-           * @param num Page number.
-           */
-          function renderPage(num) {
-            pageRendering = true;
-            // Using promise to fetch the page
-            pdfDoc.getPage(num).then(function (page) {
-              var viewport = page.getViewport({ scale: scale });
-              canvas.height = viewport.height;
-              canvas.width = viewport.width;
-
-              // Render PDF page into canvas context
-              var renderContext = {
-                canvasContext: ctx,
-                viewport: viewport,
-              };
-              var renderTask = page.render(renderContext);
-
-              // Wait for rendering to finish
-              renderTask.promise.then(function () {
-                pageRendering = false;
-
-                // Run the comparison
-                rembrandt
-                  .compare()
-                  .then(function (result) {
-                    console.log("Page: " + pageNum);
-                    console.log("Passed:", result.passed);
-                    console.log(
-                      "Pixel Difference:",
-                      result.differences,
-                      "Percentage Difference",
-                      result.percentageDifference,
-                      "%"
-                    );
-                    console.log("boxes:", result.boxes);
-
-                    result.boxes.forEach((value, i) => {
-                      var hidden_canv = document.createElement("canvas");
-                      hidden_canv.style.display = "none";
-                      document.body.appendChild(hidden_canv);
-                      hidden_canv.width = value.finish.x - value.start.x;
-                      hidden_canv.height = value.finish.y - value.start.y;
-
-                      //Draw the data you want to download to the hidden canvas
-                      var hidden_ctx = hidden_canv.getContext("2d");
-                      hidden_ctx.drawImage(
-                        canvas,
-                        value.start.x, //Start Clipping
-                        value.start.y, //Start Clipping
-                        value.finish.x - value.start.x, //Clipping Width
-                        value.finish.y - value.start.y, //Clipping Height
-                        0, //Place X
-                        0, //Place Y
-                        value.finish.x - value.start.x, //Place Width
-                        value.finish.y - value.start.y //Place Height
-                      );
-
-                      var savable = new Image();
-                      savable.src = hidden_canv.toDataURL();
-                      zip.file(
-                        "Page " + pageNum + " - Image " + i + ".png",
-                        savable.src.substr(savable.src.indexOf(",") + 1),
-                        { base64: true }
-                      );
-                      hidden_canv.parentNode.removeChild(hidden_canv);
-                    });
-                    if (pageNum >= pdfDoc.numPages) {
-                      zip
-                        .generateAsync({ type: "blob" })
-                        .then(function (content) {
-                          // see FileSaver.js
-                          saveAs(content, url + ".zip");
-                        });
-                      return;
-                    }
-                    pageNum++;
-                    queueRenderPage(pageNum);
-                  })
-                  .catch((e) => {
-                    console.error(e);
-                  });
-
-                if (pageNumPending !== null) {
-                  // New page rendering is pending
-                  renderPage(pageNumPending);
-                  pageNumPending = null;
-                }
-              });
-            });
-
-            // Update page counters
-            document.getElementById("page_num").textContent = num;
+        (async () => {
+          while (window.numberfinished < event.target.files.length) {
+            console.clear();
+            console.log("waiting...");
+            console.log(window.numberfinished);
+            sleep(5000);
           }
-
-          /**
-           * If another page rendering in progress, waits until the rendering is
-           * finised. Otherwise, executes rendering immediately.
-           */
-          function queueRenderPage(num) {
-            if (pageRendering) {
-              pageNumPending = num;
-            } else {
-              renderPage(num);
-            }
-          }
-
-          /**
-           * Asynchronously downloads PDF.
-           */
-          pdfjsLib.getDocument(typedarray).promise.then(function (pdfDoc_) {
-            pdfDoc = pdfDoc_;
-            document.getElementById("page_count").textContent = pdfDoc.numPages;
-
-            // Initial/first page rendering
-            renderPage(pageNum);
+          zip.generateAsync({ type: "blob" }).then(function (content) {
+            // see FileSaver.js
+            saveAs(content, "Result.zip");
           });
-        };
-        //Step 3:Read the file as ArrayBuffer
-        fileReader.readAsArrayBuffer(file);
+        })();
       };
     </script>
   </body>
